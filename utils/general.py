@@ -1,14 +1,33 @@
 
 import numpy as np
-
+import mne
+import pandas as pd
+import polars as pl
+from scipy import signal
 
 def file_to_lazy_frame(filename):
-    ret = pl.read_csv(filename, columns=['ts', 'x', 'y', 'z'], use_pyarrow=True).select([
-        pl.col('ts').cast(pl.Datetime), 
-        pl.col('x').cast(pl.Int16),
-        pl.col('y').cast(pl.Int16),
-        pl.col('z').cast(pl.Int16)
-        ]).interpolate().filter(pl.col('ts').is_not_null()).filter(pl.col('z').is_not_null())
+    extension = filename.split('.')[-1]
+    if extension == 'csv':
+        ret = pl.read_csv(filename, columns=['t', 'x', 'y', 'z'], use_pyarrow=True).select([
+            pl.col('ts').cast(pl.Datetime), 
+            pl.col('x').cast(pl.Int16),
+            pl.col('y').cast(pl.Int16),
+            pl.col('z').cast(pl.Int16)
+            ]).interpolate().filter(pl.col('ts').is_not_null()).filter(pl.col('z').is_not_null())
+        
+    elif extension == 'parquet':
+        ret = pl.read_parquet(filename, columns=['t', 'x', 'y', 'z'], use_pyarrow=True).select([
+            pl.col('t').cast(pl.Datetime), 
+            pl.col('x').cast(pl.Int16),
+            pl.col('y').cast(pl.Int16),
+            pl.col('z').cast(pl.Int16)
+            ]).interpolate().filter(pl.col('t').is_not_null()).filter(pl.col('z').is_not_null())
+    elif extension == 'gz':
+        print('gz format is not yet supported')
+
+    else:
+        print(f'bad file format: {extension}')    
+    
     
     return ret
 
@@ -40,6 +59,32 @@ def bandpass_filt(sig,cutoff,fs,mode):
     wn = cutoff/nyq
     sos = signal.butter(4, wn, btype=mode,output='sos')
     return pd.DataFrame(data=signal.sosfiltfilt(sos,sig,axis=0),columns=sig.columns,index=sig.index)
+
+
+def read_edf(path):
+    """reads edf file into dataframe, and upsample to 1kHz
+    
+
+    Args:
+        path (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    raw = mne.io.read_raw_edf(path)
+    start_time = raw.info['meas_date'].replace(tzinfo=None)
+    df = raw.to_data_frame()
+    df['time'] = pd.to_timedelta(df['time'], unit='s') + start_time
+    df.set_index('time', inplace=True)
+    df = df[['PR', 'RR']]
+    df_resampled = df.resample('1ms').asfreq()
+    df_upsampled = df_resampled.interpolate(method='linear')
+    
+    df_upsampled['PR'] *= 1e-6
+
+    return df_upsampled
+
+
 
 
 def resp_orient(a,fs):

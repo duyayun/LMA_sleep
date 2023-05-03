@@ -1,80 +1,54 @@
-import sys
-import pygame
-from pygame.locals import *
-from OpenGL.GL import *
-from OpenGL.GLU import *
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-def draw_sphere(radius, slices, stacks):
-    quad = gluNewQuadric()
-    gluQuadricNormals(quad, GLU_SMOOTH)
-    gluSphere(quad, radius, slices, stacks)
-    gluDeleteQuadric(quad)
+def plot_sphere(ax, x, y, z, r, color):
+    u = np.linspace(0, 2 * np.pi, 100)
+    v = np.linspace(0, np.pi, 100)
+    X = r * np.outer(np.cos(u), np.sin(v)) + x
+    Y = r * np.outer(np.sin(u), np.sin(v)) + y
+    Z = r * np.outer(np.ones(np.size(u)), np.cos(v)) + z
 
-def draw_cylinder(radius, height, slices):
-    quad = gluNewQuadric()
-    gluQuadricNormals(quad, GLU_SMOOTH)
-    gluCylinder(quad, radius, radius, height, slices, 1)
-    gluDeleteQuadric(quad)
+    ax.plot_surface(X, Y, Z, color=color)
 
-def draw_snowman():
-    # Snowman base
-    glColor3f(1, 1, 1)  # White color
-    glPushMatrix()
-    glTranslatef(0, 0.5, 0)
-    draw_sphere(0.5, 50, 50)
-    glPopMatrix()
+def plot_cone(ax, x, y, z, r, h, color):
+    v = np.linspace(0, np.pi/2, 100)
+    u = np.linspace(0, 2 * np.pi, 100)
+    X = r * np.outer(np.cos(u), np.sin(v)) + x
+    Y = r * np.outer(np.sin(u), np.sin(v)) + y
+    Z = h * np.outer(np.ones(np.size(u)), np.cos(v)) + z
 
-    # Snowman middle
-    glColor3f(1, 1, 1)  # White color
-    glPushMatrix()
-    glTranslatef(0, 1.1, 0)
-    draw_sphere(0.4, 50, 50)
-    glPopMatrix()
+    ax.plot_surface(X, Y, Z, color=color)
 
-    # Snowman head
-    glColor3f(1, 1, 1)  # White color
-    glPushMatrix()
-    glTranslatef(0, 1.7, 0)
-    draw_sphere(0.3, 50, 50)
-    glPopMatrix()
+# Create a 3D figure
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
 
-    # Carrot nose
-    glColor3f(1, 0.5, 0)  # Orange color
-    glPushMatrix()
-    glTranslatef(0, 1.7, 0.3)
-    
-    glRotatef(90, 1, 0, 0)
-    draw_cylinder(0.025, 0.25, 20)
-    glPopMatrix()
+# Draw the snowman's body
+plot_sphere(ax, 0, 0, 3, 3, 'white')  # Bottom
+plot_sphere(ax, 0, 0, 7, 2, 'white')  # Middle
+plot_sphere(ax, 0, 0, 10, 1, 'white')  # Top
 
-    # Stick arms
-    glColor3f(0.3, 0.15, 0.07)  # Brown color
-    for side in [-1, 1]:
-        glPushMatrix()
-        glTranslatef(side * 0.35, 1.2, 0)
-        glRotatef(140 * side, 0, 0, 1)
-        glScalef(1, 0.1, 0.1)
-        draw_cylinder(0.05, 1, 8)
-        glPopMatrix()
+# Draw the snowman's eyes
+plot_sphere(ax, -0.3, 0.5, 10.3, 0.1, 'black')  # Left eye
+plot_sphere(ax, 0.3, 0.5, 10.3, 0.1, 'black')  # Right eye
 
-def main():
-    pygame.init()
-    display = (800, 600)
-    pygame.display.set_mode(display, DOUBLEBUF | OPENGL)
-    gluPerspective(45, (display[0] / display[1]), 0.1, 50.0)
-    glTranslatef(0.0, 0.0, -5)
+# Draw the snowman's carrot nose
+plot_cone(ax, 0, 0.8, 10, 0.1, 0.5, 'orange')
 
-    while True:
-        for event in pygame.event.get():
-            if event.type == QUIT or (event.type == KEYDOWN and event.key == K_ESCAPE):
-                pygame.quit()
-                sys.exit()
+# Draw the snowman's stick arms
+ax.plot([-1.5, -3], [0, 0], [7, 8], color='brown')  # Left arm
+ax.plot([1.5, 3], [0, 0], [7, 8], color='brown')  # Right arm
 
-        glRotatef(1, 3, 1, 1)
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        draw_snowman()
-        pygame.display.flip()
-        pygame.time.wait(10)
+# Set the aspect ratio and limits of the plot
+ax.set_box_aspect([1, 1, 1])  # Equal aspect ratio
+ax.set_xlim(-5, 5)
+ax.set_ylim(-5, 5)
+ax.set_zlim(0, 15)
 
-if __name__ == "__main__":
-    main()
+# Remove the axis lines and ticks
+ax.set_axis_off()
+
+# Show the plot
+plt.show()
