@@ -4,6 +4,10 @@ import mne
 import pandas as pd
 import polars as pl
 from scipy import signal
+import docx
+from datetime import datetime, timedelta
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 
 def file_to_lazy_frame(filename):
     extension = filename.split('.')[-1]
@@ -85,48 +89,131 @@ def read_edf(path):
     return df_upsampled
 
 
+def label_dataframe(X, doc):
+    doc = docx.Document(doc)
+    start_date_string = None
+    for s in doc.paragraphs:
+        if 'Date' in s.text:
+            start_date_string = s.text
 
+    assert start_date_string, "Date is not found in docx"
 
-def resp_orient(a,fs):
-    """ function that generates orientation phi. Implemented by Andreas Tzavelis following precedures
-    described in https://ieeexplore.ieee.org/document/5504743.
- 
-    Args:
-        a (_type_): numpy array containing MA data
-        fs (_type_): frequency
+    format_string = "Date: %m/%d/%Y %I:%M:%S %p"
 
-    Returns:
-        _type_: _description_
-    """
-    n = a.shape
-    
-    # normalize each acceleration vector
-    a = a/np.sqrt(a[0,:]**2+a[1,:]**2+a[2,:]**2)
-
-    # calulate adjacent rotation angles and vectors
-    theta = np.array([np.arccos(np.dot(a[:,i+1],a[:,i])) for i in range(n[1]-1)])
-    r = np.array([np.cross(a[:,i+1],a[:,i]) for i in range(n[1]-1)])
-    
-    # Calculate covariance matrix and PCA
-    C = np.cov(r.T)
-    eigval, eigvec = np.linalg.eig(C)
-    r_ref = eigvec[:,np.argmax(eigval)] # prevailing rotational axis
-    
-    # force rotation axis into same hemisphere (rotations back and forth would otherwise flip axis)
-    r_t = np.array([np.multiply(r[:,i],np.sign(np.dot(r,r_ref))) for i in range(3)])
-    
-    # Isolate predominant rotational axis at a point by weighting by instantaneous angle and nearby points
-    W_norm = int(30*fs)
-    h_win = np.hamming(W_norm)
-    r_t_norm = np.array([np.convolve(np.multiply(theta,r_t[i,:]),h_win,mode='same') for i in range(3)])
-    r_t_norm = r_t_norm/np.sqrt(r_t_norm[0,:]**2+r_t_norm[1,:]**2+r_t_norm[2,:]**2)
-    
-    # Average acceleration axis (presumed direction of gravity)
-    a_ctrl_norm = np.array([np.convolve(a[i,:],np.ones(W_norm)/W_norm,mode='same') for i in range(3)])
-    a_ctrl_norm = a_ctrl_norm/np.sqrt(a_ctrl_norm[0,:]**2+a_ctrl_norm[1,:]**2+a_ctrl_norm[2,:]**2)
-    
-    # calculate rotation angles about gravity axis
-    phi = np.array([np.arcsin(np.dot(np.cross(a_ctrl_norm[:,i],r_t_norm[:,i]),a[:,i])) for i in range(n[1]-1)])
-    phi = np.pad(phi,(0,1),mode='edge')
+    doc_start_time = datetime.strptime(start_date_string, format_string)
+    for table in doc.tables:
+        # Extract the contents of each cell in the table
+        data = [[cell.text for cell in row.cells] for row in table.rows]
         
-    return phi, a_ctrl_norm
+        # Create a pandas DataFrame from the extracted data
+        df = pd.DataFrame(data[1:], columns=data[0])
+
+    stage_values = df['Stage'].values.T.flatten()
+    epoch_values = df['Epoch'].values.T.flatten()
+
+    label_df = pd.DataFrame()
+    label_df['Stage'] = stage_values
+    label_df['Epoch'] = epoch_values
+
+    doc_start_time = doc_start_time
+    increment = timedelta(seconds=30)
+    num_periods = len(label_df)
+    time_index = pd.date_range(start=doc_start_time, periods=num_periods, freq=increment)
+    label_df.set_index(time_index, inplace=True)
+    final_df = pd.concat([X, label_df], axis=1)
+    final_df['Stage'] = final_df['Stage'].fillna(method='ffill')
+    final_df['Epoch'] = final_df['Epoch'].fillna(method='ffill')
+    # label_index = list(set(final_df['Stage']))
+    label_map={
+        '<Stage>Wake':0,
+        '<Stage>NREM 1':1,
+        '<Stage>NREM 2':2,
+        '<Stage>NREM 3':3,
+        '<Stage>REM':4,
+        '<Stage>UNS':5,
+        '<Stage>-':6,
+        '<Stage>Unscored':7
+    }
+    # print(label_map)
+    final_df['Stage'].map(label_map)
+    final_df['QuantizedStage'] = final_df['Stage'].map(label_map)
+
+    return final_df
+
+
+
+def plot_labeled_dataframe(df):
+    # reversed_label_map = {value: key for key, value in label_map.items()}
+
+    fig, ax = plt.subplots(2, figsize=(30, 10))
+    color_map = {'<Stage>Wake':'red', '<Stage>NREM 1':'green', '<Stage>NREM 2':'blue', '<Stage>NREM 3': 'orange', '<Stage>REM':'black', '<Stage>-': 'lavender', '<Stage>UNS':'purple'}
+    legend_patches = []
+    # for i in range(len(stage_index[:-1])):
+    #     ax.axvspan(stage_index[i], stage_index[i + 1], facecolor=color_map[final_df['QuantizedStage'][stage_index[i]]], alpha=0.5)
+    for i, label in enumerate(df['Stage']):
+        if i == 0:
+            continue
+        if df['Stage'][i] != df['Stage'][i - 1]:
+            ax[0].axvspan(df.index[i - 1], df.index[i], facecolor=color_map[df['label'][i - 1]], alpha=0.5)
+            ax[1].axvspan(df.index[i - 1], df.index[i], facecolor=color_map[df['label'][i - 1]], alpha=0.5)
+
+    for k, v in color_map.items():
+        legend_patches.append(mpatches.Patch(color=v, label=k, alpha=0.5))
+    ax[0].plot(df.index, df['PR'], label='Heart Rate', color='black', linewidth=2)
+    ax[0].plot(df.index, df['ma_hr'], label='MA Heart Rate', color='cyan', linewidth=1)
+    ax[0].set_xlabel('Time(Month-Day Hour)', fontsize=24)
+    ax[0].set_ylabel('Heart Rate', fontsize=24)
+    ax[0].set_title('Heart Rate with Sleep Stage Labels', fontsize=36)
+    ax[0].set_ylim(0, 120)
+    # Add the legend with custom patches
+    ax[0].legend(handles=list(set(legend_patches + [mpatches.Patch(color='black', label='Heart Rate'),mpatches.Patch(color='cyan', label='MA Heart Rate')])), loc='upper left', bbox_to_anchor=(1, 1), fontsize=24)
+
+    
+    ax[1].plot(df.index, df['RR'], label='EDF Respiration Rate', color='black', linewidth=2)
+    ax[1].plot(df.index, df['ma_rr'], label='MA Respiration Rate', color='cyan', linewidth=1)
+    ax[1].set_xlabel('Time(Month-Day Hour)', fontsize=24)
+    ax[1].set_ylabel('Heart Rate', fontsize=24)
+    ax[1].set_ylim(0, 120)
+    ax[1].set_title('Respiration Rate with Sleep Stage Labels', fontsize=36)
+    # ax[1].set_ylim(0, 40)
+    ax[1].legend(handles=list(set(legend_patches + [mpatches.Patch(color='black', label='Heart Rate'),mpatches.Patch(color='cyan', label='MA Heart Rate')])), loc='upper left', bbox_to_anchor=(1, 1), fontsize=24)
+
+
+    plt.show()
+
+
+def plot_comparison(df):
+    reversed_label_map = {value: key for key, value in label_map.items()}
+
+    fig, ax = plt.subplots(2, figsize=(30, 20))
+    for a in ax:
+        a.tick_params(axis='both', labelsize=20)
+    color_map = {0:'red', 1:'green', 2:'blue', 3: 'orange', 4:'black', 5: 'lavender', 6:'purple', 7:'yellow'}
+    legend_patches = []
+    for i in range(len(stage_index[:-1])):
+        ax[0].axvspan(stage_index[i], stage_index[i + 1], facecolor=color_map[final_df['QuantizedStage'][stage_index[i]]], alpha=0.5)
+        ax[1].axvspan(stage_index[i], stage_index[i + 1], facecolor=color_map[final_df['QuantizedStage'][stage_index[i]]], alpha=0.5)
+    for k, v in reversed_label_map.items():
+        legend_patches.append(mpatches.Patch(color=color_map[k], label=v, alpha=0.3))
+    ax[0].plot(df.index, df['PR'], label='Heart Rate', color='black', linewidth=2)
+    ax[0].plot(df.index, df['ma_hr'], label='MA Heart Rate', color='cyan', linewidth=1)
+    ax[0].set_xlabel('Time(Month-Day Hour)', fontsize=24)
+    ax[0].set_ylabel('Heart Rate', fontsize=24)
+    ax[0].set_title('Heart Rate with Sleep Stage Labels (Current Pipeline)', fontsize=36)
+    ax[0].set_ylim(0, 120)
+    # Add the legend with custom patches
+    ax[0].legend(handles=list(set(legend_patches + [mpatches.Patch(color='black', label='Heart Rate'),mpatches.Patch(color='cyan', label='MA Heart Rate')])), loc='upper left', bbox_to_anchor=(1, 1), fontsize=24)
+
+    
+    ax[1].plot(df.index, df['PR'], label='EDF Heart Rate', color='black', linewidth=2)
+    ax[1].plot(df.index, df['a_hr_ma'], label='MA Heart Rate', color='cyan', linewidth=1)
+    ax[1].set_xlabel('Time(Month-Day Hour)', fontsize=24)
+    ax[1].set_ylabel('Heart Rate', fontsize=24)
+    ax[1].set_ylim(0, 120)
+    ax[1].set_title('Heart Rate with Sleep Stage Labels (Andreas\'s Pipeline)', fontsize=36)
+    # ax[1].set_ylim(0, 40)
+    ax[1].legend(handles=list(set(legend_patches + [mpatches.Patch(color='black', label='Heart Rate'),mpatches.Patch(color='cyan', label='MA Heart Rate')])), loc='upper left', bbox_to_anchor=(1, 1), fontsize=24)
+
+
+    plt.show()
+

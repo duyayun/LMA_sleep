@@ -1,0 +1,25 @@
+# data_config.yaml
+
+data:
+  train:
+    - D:\ShiyuanDuan\SleepStudy\outputs\sub005.parquet
+    - D:\ShiyuanDuan\SleepStudy\outputs\sub002.parquet
+    - D:\ShiyuanDuan\SleepStudy\outputs\sub003.parquet
+    - D:\ShiyuanDuan\SleepStudy\outputs\sub004.parquet
+    - D:\ShiyuanDuan\SleepStudy\outputs\sub006.parquet
+    - D:\ShiyuanDuan\SleepStudy\outputs\sub007.parquet
+    
+  val:
+    
+    - D:\ShiyuanDuan\SleepStudy\outputs\sub001.parquet
+  test:
+    
+
+
+training:
+  model: "resnet18"
+  batch_size: 64
+  epochs: 100
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  save_dir: "checkpoints/temp.pt"
