@@ -13,4 +13,5 @@ a diverse range of human subjects, both healthy and with sleep disorders. This m
 enables cost-effective, clinical-quality sleep tracking with minimal user effort, suitable for
 home and clinical use.
 
-S
+Structure of our code:
+
