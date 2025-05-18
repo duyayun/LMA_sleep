@@ -1,3 +1,5 @@
+If you use or build upon our code or results, please cite our paper:
+
 Abstract of our paper: Accurate identification of sleep stages and disorders is crucial for maintaining health,
 preventing chronic conditions, and improving diagnosis and treatment. Direct respiratory
 measurements, key biomarkers, are missing in traditional wrist- or finger-worn wearables,
